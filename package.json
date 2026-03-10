@@ -1,0 +1,27 @@
+{
+  "name": "student_carrental",
+  "version": "1.0.0",
+  "description": "Car Rental Management System - Full Stack (React + Express)",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd frontend && npm run build && npm run preview",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "seed": "cd backend && npm run seed"
+  },
+  "keywords": [
+    "car",
+    "rental",
+    "management",
+    "react",
+    "express"
+  ],
+  "author": "Student",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
