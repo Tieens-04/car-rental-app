@@ -18,7 +18,13 @@ module.exports = {
     
     // CORS
     cors: {
-        origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000', 'http://localhost:5173', 'https://car-rental-app-t3ws.onrender.com'],
+        origin: (() => {
+            const base = ['http://localhost:3000', 'http://localhost:5173', 'https://car-rental-app-t3ws.onrender.com'];
+            if (process.env.CORS_ORIGIN) {
+                return [...new Set([...base, ...process.env.CORS_ORIGIN.split(',')])];
+            }
+            return base;
+        })(),
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
