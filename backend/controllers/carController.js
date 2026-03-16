@@ -55,6 +55,36 @@ const getAllCarsAPI = asyncHandler(async (req, res) => {
             .limit(parseInt(limit)),
         Car.countDocuments(query)
     ]);
+
+    const carNumbers = cars.map((car) => car.carNumber);
+    const activeBookings = await Booking.find({
+        carNumber: { $in: carNumbers },
+        status: { $in: ['chờ xác nhận', 'chờ nhận xe', 'đã nhận xe'] },
+        endDate: { $gte: new Date() }
+    }).select('carNumber endDate status');
+
+    const rentedUntilByCar = {};
+    for (const booking of activeBookings) {
+        const key = booking.carNumber;
+        const endTime = new Date(booking.endDate).getTime();
+        if (!rentedUntilByCar[key] || endTime > rentedUntilByCar[key]) {
+            rentedUntilByCar[key] = endTime;
+        }
+    }
+
+    const enrichedCars = cars.map((car) => {
+        const carObject = car.toObject();
+        const rentedUntil = rentedUntilByCar[car.carNumber];
+        if (rentedUntil) {
+            carObject.rentedUntil = new Date(rentedUntil);
+        }
+            // Nếu không có booking đang thuê, hoặc booking đã hoàn thành, set status là 'available'
+            const hasActiveBooking = activeBookings.some(b => b.carNumber === car.carNumber);
+            if (!hasActiveBooking && carObject.status === 'rented') {
+                carObject.status = 'available';
+            }
+            return carObject;
+    });
     
     // Set pagination headers
     res.set('X-Total-Count', total);
@@ -64,7 +94,7 @@ const getAllCarsAPI = asyncHandler(async (req, res) => {
     res.status(200).json({
         success: true,
         data: {
-            cars,
+            cars: enrichedCars,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
@@ -86,8 +116,11 @@ const getCarByNumber = asyncHandler(async (req, res) => {
     // Get booking info for this car
     const activeBookings = await Booking.find({
         carNumber: car.carNumber,
-        endDate: { $gte: new Date() }
-    }).select('customerName startDate endDate status');
+        endDate: { $gte: new Date() },
+        status: { $nin: ['đã hủy', 'hoàn thành'] }
+    })
+        .select('customerName startDate endDate status')
+        .sort({ startDate: 1 });
     
     res.status(200).json({
         success: true,
@@ -100,7 +133,7 @@ const getCarByNumber = asyncHandler(async (req, res) => {
 
 // Create a new car
 const createCar = asyncHandler(async (req, res) => {
-    const { carNumber, capacity, status, pricePerDay, features } = req.body;
+    const { carNumber, capacity, status, pricePerDay, features, brand, model, year, fuelType, transmission, imageUrl, description } = req.body;
 
     // Server-side validation
     if (!carNumber || !carNumber.trim()) {
@@ -132,13 +165,24 @@ const createCar = asyncHandler(async (req, res) => {
         }
     }
 
-    const car = new Car({
+    const carData = {
         carNumber: carNumber.trim(),
         capacity: parseInt(capacity),
         status: status || 'available',
         pricePerDay: parseFloat(pricePerDay),
         features: processedFeatures
-    });
+    };
+
+    // Persist optional fields
+    if (brand !== undefined) carData.brand = brand.trim();
+    if (model !== undefined) carData.model = model.trim();
+    if (year !== undefined) carData.year = parseInt(year);
+    if (fuelType !== undefined) carData.fuelType = fuelType;
+    if (transmission !== undefined) carData.transmission = transmission;
+    if (imageUrl !== undefined) carData.imageUrl = imageUrl.trim();
+    if (description !== undefined) carData.description = description.trim();
+
+    const car = new Car(carData);
 
     const savedCar = await car.save();
     
@@ -152,7 +196,7 @@ const createCar = asyncHandler(async (req, res) => {
 // Update a car
 const updateCar = asyncHandler(async (req, res) => {
     const { carNumber } = req.params;
-    const { capacity, status, pricePerDay, features } = req.body;
+    const { capacity, status, pricePerDay, features, brand, model, year, fuelType, transmission, imageUrl, description } = req.body;
 
     // Server-side validation
     if (capacity !== undefined) {
@@ -181,6 +225,14 @@ const updateCar = asyncHandler(async (req, res) => {
             updateData.features = features.split(',').map(f => f.trim()).filter(f => f);
         }
     }
+    // Update optional fields
+    if (brand !== undefined) updateData.brand = brand.trim();
+    if (model !== undefined) updateData.model = model.trim();
+    if (year !== undefined) updateData.year = parseInt(year);
+    if (fuelType !== undefined) updateData.fuelType = fuelType;
+    if (transmission !== undefined) updateData.transmission = transmission;
+    if (imageUrl !== undefined) updateData.imageUrl = imageUrl.trim();
+    if (description !== undefined) updateData.description = description.trim();
 
     const car = await Car.findOneAndUpdate(
         { carNumber },

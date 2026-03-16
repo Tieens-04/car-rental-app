@@ -2,13 +2,76 @@ const Booking = require('../models/bookingModel');
 const Car = require('../models/carModel');
 const { asyncHandler, AppError } = require('../middleware/errorMiddleware');
 
-// Calculate number of rental days
+const isAdminUser = (user) => user?.role === 'admin';
+const normalizeStatus = (status) => {
+    if (status === 'chờ xử lý') return 'chờ xác nhận';
+    if (status === 'đã đón') return 'đã nhận xe';
+    return status;
+};
+
+const isBookingOverdue = (booking) => {
+    if (!booking) return false;
+    const status = normalizeStatus(booking.status);
+    if (status !== 'đã nhận xe' && status !== 'quá hạn trả xe') return false;
+    return new Date() > new Date(booking.endDate);
+};
+
+const ensureBookingAccess = (booking, user, { adminOnly = false } = {}) => {
+    if (!user) {
+        throw new AppError('Vui lòng đăng nhập để truy cập', 401, 'NOT_AUTHENTICATED');
+    }
+
+    if (adminOnly && !isAdminUser(user)) {
+        throw new AppError('Chỉ admin mới có quyền thực hiện thao tác này', 403, 'FORBIDDEN');
+    }
+
+    if (isAdminUser(user)) {
+        return;
+    }
+
+    // If booking has createdBy set, require it to match current user
+    if (booking.createdBy) {
+        // booking.createdBy may be an ObjectId or a populated User object.
+        const bookingOwnerId = booking.createdBy._id ? booking.createdBy._id.toString() : booking.createdBy.toString();
+        if (bookingOwnerId !== user.id.toString()) {
+            throw new AppError('Bạn không có quyền truy cập đơn đặt xe này', 403, 'FORBIDDEN');
+        }
+        return;
+    }
+
+    // If createdBy is missing (legacy data), allow access when booking.customerName
+    // clearly matches the authenticated user's fullName or username (best-effort fallback).
+    const normalizedCustomer = (booking.customerName || '').trim().toLowerCase();
+    const userFull = (user.fullName || '').trim().toLowerCase();
+    const userName = (user.username || '').trim().toLowerCase();
+
+    if (normalizedCustomer && (normalizedCustomer === userFull || normalizedCustomer === userName)) {
+        // best-effort allow access for legacy bookings
+        return;
+    }
+
+    // Otherwise deny access
+    throw new AppError('Bạn không có quyền truy cập đơn đặt xe này', 403, 'FORBIDDEN');
+};
+
+const enrichBookingMeta = (bookingDoc) => {
+    if (!bookingDoc) return bookingDoc;
+    const booking = bookingDoc.toObject ? bookingDoc.toObject() : bookingDoc;
+    const overdue = isBookingOverdue(booking);
+    return {
+        ...booking,
+        overdue,
+        overdueMs: overdue ? (Date.now() - new Date(booking.endDate).getTime()) : 0
+    };
+};
+
+// Calculate number of rental days (minimum 1 for same-day rentals)
 const calculateDays = (startDate, endDate) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
     const diffTime = Math.abs(end - start);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
+    return Math.max(1, diffDays);
 };
 
 // Check for booking date overlap (excluding cancelled bookings)
@@ -37,14 +100,18 @@ const validateBookingData = (customerName, carNumber, startDate, endDate, isUpda
     const errors = [];
 
     // Validate customer name
+    const fullNameRegex = /^[A-Za-zÀ-ỹ\s]+$/u;
     if (!customerName || !customerName.trim()) {
-        errors.push('Tên khách hàng là bắt buộc');
+        errors.push('Tên người đặt là bắt buộc');
     } else {
         if (customerName.trim().length < 3) {
-            errors.push('Tên khách hàng phải có ít nhất 3 ký tự');
+            errors.push('Tên người đặt phải có ít nhất 3 ký tự');
         }
         if (customerName.trim().length > 100) {
-            errors.push('Tên khách hàng không được vượt quá 100 ký tự');
+            errors.push('Tên người đặt không được vượt quá 100 ký tự');
+        }
+        if (!fullNameRegex.test(customerName.trim())) {
+            errors.push('Tên người đặt chỉ được chứa chữ cái (Tiếng Việt) và dấu cách');
         }
     }
 
@@ -82,8 +149,8 @@ const validateBookingData = (customerName, carNumber, startDate, endDate, isUpda
                 }
             }
 
-            if (end <= start) {
-                errors.push('Ngày kết thúc phải sau ngày bắt đầu');
+            if (end < start) {
+                errors.push('Ngày kết thúc không được trước ngày bắt đầu');
             }
 
             const diffTime = Math.abs(end - start);
@@ -133,8 +200,10 @@ const getAllBookingsAPI = asyncHandler(async (req, res) => {
         if (startDateTo) query.startDate.$lte = new Date(startDateTo);
     }
     
-    // Filter by current user's bookings
-    if (myBookings === 'true' && req.user) {
+    // Non-admin users can only see their own bookings
+    if (!isAdminUser(req.user)) {
+        query.createdBy = req.user.id;
+    } else if (myBookings === 'true' && req.user) {
         query.createdBy = req.user.id;
     }
     
@@ -152,6 +221,8 @@ const getAllBookingsAPI = asyncHandler(async (req, res) => {
             .limit(parseInt(limit)),
         Booking.countDocuments(query)
     ]);
+
+    const bookingsWithMeta = bookings.map(enrichBookingMeta);
     
     // Set pagination headers
     res.set('X-Total-Count', total);
@@ -161,7 +232,7 @@ const getAllBookingsAPI = asyncHandler(async (req, res) => {
     res.status(200).json({
         success: true,
         data: {
-            bookings,
+            bookings: bookingsWithMeta,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
@@ -181,6 +252,8 @@ const getBookingById = asyncHandler(async (req, res) => {
     if (!booking) {
         throw new AppError('Không tìm thấy booking', 404, 'BOOKING_NOT_FOUND');
     }
+
+    ensureBookingAccess(booking, req.user);
     
     // Get car details
     const car = await Car.findOne({ carNumber: booking.carNumber });
@@ -188,7 +261,7 @@ const getBookingById = asyncHandler(async (req, res) => {
     res.status(200).json({
         success: true,
         data: {
-            booking,
+            booking: enrichBookingMeta(booking),
             car
         }
     });
@@ -196,6 +269,10 @@ const getBookingById = asyncHandler(async (req, res) => {
 
 // POST /bookings - Create a new booking
 const createBooking = asyncHandler(async (req, res) => {
+    if (isAdminUser(req.user)) {
+        throw new AppError('Admin không thể đặt xe. Chỉ khách hàng mới có quyền này.', 403, 'FORBIDDEN');
+    }
+
     const { customerName, carNumber, startDate, endDate, notes } = req.body;
 
     // Server-side validation
@@ -217,6 +294,9 @@ const createBooking = asyncHandler(async (req, res) => {
     if (car.status === 'maintenance') {
         throw new AppError('Xe đang được bảo trì, không thể đặt', 400, 'CAR_IN_MAINTENANCE');
     }
+    if (car.status === 'rented') {
+        throw new AppError('Xe đang được thuê, vui lòng chọn xe khác', 400, 'CAR_ALREADY_RENTED');
+    }
 
     // Check for date overlap with existing bookings
     const overlappingBooking = await checkDateOverlap(carNumber, startDate, endDate);
@@ -234,6 +314,9 @@ const createBooking = asyncHandler(async (req, res) => {
     const numberOfDays = calculateDays(startDate, endDate);
     const totalAmount = numberOfDays * car.pricePerDay;
 
+    const depositAmount = Math.round(totalAmount * 0.1);
+    const remainingAmount = totalAmount - depositAmount;
+
     // Create booking with user tracking
     const booking = new Booking({
         customerName: customerName.trim(),
@@ -241,22 +324,28 @@ const createBooking = asyncHandler(async (req, res) => {
         startDate: start,
         endDate: end,
         totalAmount,
+        depositAmount,
+        remainingAmount,
+        status: 'chờ xác nhận',
         notes: notes?.trim(),
         createdBy: req.user?.id
     });
 
     const savedBooking = await booking.save();
 
-    // Update car status to rented only if booking starts today or earlier
+    // Chỉ cập nhật trạng thái xe sang 'rented' nếu ngày bắt đầu thuê là hôm nay hoặc trước đó
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    if (start <= today) {
-        await Car.findOneAndUpdate({ carNumber }, { status: 'rented' });
+    const bookingStart = new Date(start);
+    bookingStart.setHours(0, 0, 0, 0);
+    if (bookingStart <= today) {
+        car.status = 'rented';
+        await car.save();
     }
 
     res.status(201).json({
         success: true,
-        message: 'Tạo booking thành công',
+        message: 'Tạo booking thành công. Vui lòng thanh toán cọc 10%',
         data: savedBooking
     });
 });
@@ -272,12 +361,18 @@ const updateBooking = asyncHandler(async (req, res) => {
         throw new AppError('Không tìm thấy booking', 404, 'BOOKING_NOT_FOUND');
     }
 
+    ensureBookingAccess(existingBooking, req.user);
+    const existingStatus = normalizeStatus(existingBooking.status);
+
     // Prevent editing completed or cancelled bookings
-    if (existingBooking.status === 'hoàn thành') {
+    if (existingStatus === 'hoàn thành') {
         throw new AppError('Không thể chỉnh sửa booking đã hoàn thành', 400, 'ALREADY_COMPLETED');
     }
-    if (existingBooking.status === 'đã hủy') {
+    if (existingStatus === 'đã hủy') {
         throw new AppError('Không thể chỉnh sửa booking đã bị hủy', 400, 'ALREADY_CANCELLED');
+    }
+    if (existingStatus === 'đã nhận xe') {
+        throw new AppError('Không thể chỉnh sửa booking đã nhận xe', 400, 'ALREADY_PICKED_UP');
     }
 
     // Server-side validation  
@@ -315,9 +410,15 @@ const updateBooking = asyncHandler(async (req, res) => {
         if (car.status === 'maintenance') {
             throw new AppError('Xe đang được bảo trì, không thể đặt', 400, 'CAR_IN_MAINTENANCE');
         }
+        if (car.status === 'rented' && finalCarNumber !== existingBooking.carNumber) {
+            throw new AppError('Xe đang được thuê, vui lòng chọn xe khác', 400, 'CAR_ALREADY_RENTED');
+        }
         const numberOfDays = calculateDays(finalStartDate, finalEndDate);
         totalAmount = numberOfDays * car.pricePerDay;
     }
+
+    const depositAmount = Math.round(totalAmount * 0.1);
+    const remainingAmount = totalAmount - depositAmount;
 
     // If car changed, update old car status back
     if (carNumber && carNumber !== existingBooking.carNumber) {
@@ -333,19 +434,29 @@ const updateBooking = asyncHandler(async (req, res) => {
         await Car.findOneAndUpdate({ carNumber }, { status: 'rented' });
     }
 
+    const nextStatus = normalizeStatus(isAdminUser(req.user) && status ? status : existingStatus);
+
+    // Build update data, preserving notes if not provided
+    const updateData = {
+        customerName: finalCustomerName.trim ? finalCustomerName.trim() : finalCustomerName,
+        carNumber: finalCarNumber,
+        startDate: finalStartDate,
+        endDate: finalEndDate,
+        totalAmount,
+        depositAmount,
+        remainingAmount,
+        status: nextStatus,
+        updatedBy: req.user?.id
+    };
+    // Chỉ update notes khi nó được gửi trong request body (bảo toàn notes cũ)
+    if (notes !== undefined) {
+        updateData.notes = notes?.trim();
+    }
+
     // Update booking with user tracking
     const updatedBooking = await Booking.findByIdAndUpdate(
         bookingId,
-        {
-            customerName: finalCustomerName.trim ? finalCustomerName.trim() : finalCustomerName,
-            carNumber: finalCarNumber,
-            startDate: finalStartDate,
-            endDate: finalEndDate,
-            totalAmount,
-            notes: notes?.trim(),
-            status: status || existingBooking.status,
-            updatedBy: req.user?.id
-        },
+        updateData,
         { new: true, runValidators: true }
     );
 
@@ -364,6 +475,8 @@ const deleteBooking = asyncHandler(async (req, res) => {
     if (!booking) {
         throw new AppError('Không tìm thấy booking', 404, 'BOOKING_NOT_FOUND');
     }
+
+    ensureBookingAccess(booking, req.user, { adminOnly: true });
 
     // Actually delete the booking
     await Booking.findByIdAndDelete(bookingId);
@@ -394,15 +507,30 @@ const pickupBooking = asyncHandler(async (req, res) => {
         throw new AppError('Không tìm thấy booking', 404, 'BOOKING_NOT_FOUND');
     }
 
+    ensureBookingAccess(booking, req.user);
+    const bookingStatus = normalizeStatus(booking.status);
+
     // Kiểm tra booking đã được nhận xe chưa
-    if (booking.status === 'đã đón') {
+    if (bookingStatus === 'đã nhận xe') {
         throw new AppError('Booking này đã được nhận xe rồi', 400, 'ALREADY_PICKED_UP');
     }
-    if (booking.status === 'hoàn thành') {
+    if (bookingStatus === 'hoàn thành') {
         throw new AppError('Booking này đã hoàn thành', 400, 'ALREADY_COMPLETED');
     }
-    if (booking.status === 'đã hủy') {
+    if (bookingStatus === 'đã hủy') {
         throw new AppError('Booking này đã bị hủy', 400, 'ALREADY_CANCELLED');
+    }
+    if (bookingStatus !== 'chờ nhận xe') {
+        throw new AppError('Booking chưa được admin xác nhận', 400, 'NOT_CONFIRMED');
+    }
+    if (!booking.depositPaidAt) {
+        throw new AppError('Vui lòng thanh toán tiền cọc trước khi nhận xe', 400, 'DEPOSIT_NOT_PAID');
+    }
+    if (!booking.remainingPaidAt) {
+        throw new AppError('Vui lòng thanh toán số tiền còn lại trước khi nhận xe', 400, 'REMAINING_NOT_PAID');
+    }
+    if (isBookingOverdue(booking)) {
+        throw new AppError('Booking đã quá hạn trả xe, vui lòng xử lý trả xe', 400, 'BOOKING_OVERDUE');
     }
 
     // Kiểm tra ngày nhận xe phải >= ngày bắt đầu đặt xe
@@ -422,12 +550,14 @@ const pickupBooking = asyncHandler(async (req, res) => {
     const updatedBooking = await Booking.findByIdAndUpdate(
         bookingId,
         {
-            status: 'đã đón',
+            status: 'đã nhận xe',
             pickupAt: now,
             updatedBy: req.user?.id
         },
         { new: true, runValidators: true }
     );
+
+    await Car.findOneAndUpdate({ carNumber: booking.carNumber }, { status: 'rented' });
 
     res.status(200).json({
         success: true,
@@ -445,8 +575,13 @@ const completeBooking = asyncHandler(async (req, res) => {
         throw new AppError('Không tìm thấy booking', 404, 'BOOKING_NOT_FOUND');
     }
 
-    if (booking.status !== 'đã đón') {
-        throw new AppError('Chỉ có thể hoàn thành booking đã nhận xe', 400, 'INVALID_STATUS');
+    ensureBookingAccess(booking, req.user, { adminOnly: true });
+    const bookingStatus = normalizeStatus(booking.status);
+
+    if (bookingStatus !== 'đã nhận xe') {
+        if (bookingStatus !== 'quá hạn trả xe') {
+            throw new AppError('Chỉ có thể hoàn thành booking đã nhận xe', 400, 'INVALID_STATUS');
+        }
     }
 
     const updatedBooking = await Booking.findByIdAndUpdate(
@@ -476,6 +611,42 @@ const completeBooking = asyncHandler(async (req, res) => {
     });
 });
 
+// PATCH /bookings/:bookingId/mark-overdue - Đánh dấu quá hạn trả xe
+const markOverdueBooking = asyncHandler(async (req, res) => {
+    const { bookingId } = req.params;
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+        throw new AppError('Không tìm thấy booking', 404, 'BOOKING_NOT_FOUND');
+    }
+
+    ensureBookingAccess(booking, req.user, { adminOnly: true });
+    const bookingStatus = normalizeStatus(booking.status);
+
+    if (bookingStatus !== 'đã nhận xe' && bookingStatus !== 'quá hạn trả xe') {
+        throw new AppError('Chỉ có thể đánh dấu quá hạn cho booking đã nhận xe', 400, 'INVALID_STATUS');
+    }
+
+    if (!isBookingOverdue(booking)) {
+        throw new AppError('Booking này chưa quá hạn trả xe', 400, 'NOT_OVERDUE_YET');
+    }
+
+    const updatedBooking = await Booking.findByIdAndUpdate(
+        bookingId,
+        {
+            status: 'quá hạn trả xe',
+            updatedBy: req.user?.id
+        },
+        { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+        success: true,
+        message: 'Đã đánh dấu quá hạn trả xe',
+        data: enrichBookingMeta(updatedBooking)
+    });
+});
+
 // PATCH /bookings/:bookingId/cancel - Hủy booking
 const cancelBooking = asyncHandler(async (req, res) => {
     const { bookingId } = req.params;
@@ -486,10 +657,13 @@ const cancelBooking = asyncHandler(async (req, res) => {
         throw new AppError('Không tìm thấy booking', 404, 'BOOKING_NOT_FOUND');
     }
 
-    if (booking.status === 'hoàn thành') {
+    ensureBookingAccess(booking, req.user);
+    const bookingStatus = normalizeStatus(booking.status);
+
+    if (bookingStatus === 'hoàn thành') {
         throw new AppError('Không thể hủy booking đã hoàn thành', 400, 'ALREADY_COMPLETED');
     }
-    if (booking.status === 'đã hủy') {
+    if (bookingStatus === 'đã hủy') {
         throw new AppError('Booking này đã bị hủy', 400, 'ALREADY_CANCELLED');
     }
 
@@ -517,6 +691,115 @@ const cancelBooking = asyncHandler(async (req, res) => {
     res.status(200).json({
         success: true,
         message: 'Hủy booking thành công',
+        data: updatedBooking
+    });
+});
+
+// PATCH /bookings/:bookingId/confirm - Admin xác nhận đơn
+const confirmBooking = asyncHandler(async (req, res) => {
+    const { bookingId } = req.params;
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+        throw new AppError('Không tìm thấy booking', 404, 'BOOKING_NOT_FOUND');
+    }
+
+    ensureBookingAccess(booking, req.user, { adminOnly: true });
+    const bookingStatus = normalizeStatus(booking.status);
+
+    if (bookingStatus !== 'chờ xác nhận') {
+        throw new AppError('Chỉ có thể xác nhận đơn đang chờ xác nhận', 400, 'INVALID_STATUS');
+    }
+    if (!booking.depositPaidAt) {
+        throw new AppError('Khách hàng chưa thanh toán tiền cọc 10%', 400, 'DEPOSIT_NOT_PAID');
+    }
+
+    const updatedBooking = await Booking.findByIdAndUpdate(
+        bookingId,
+        {
+            status: 'chờ nhận xe',
+            confirmedAt: new Date(),
+            updatedBy: req.user?.id
+        },
+        { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+        success: true,
+        message: 'Xác nhận booking thành công',
+        data: updatedBooking
+    });
+});
+
+// PATCH /bookings/:bookingId/pay-deposit - Thanh toán cọc 10%
+const payDeposit = asyncHandler(async (req, res) => {
+    const { bookingId } = req.params;
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+        throw new AppError('Không tìm thấy booking', 404, 'BOOKING_NOT_FOUND');
+    }
+
+    ensureBookingAccess(booking, req.user);
+    const bookingStatus = normalizeStatus(booking.status);
+
+    if (bookingStatus === 'đã hủy' || bookingStatus === 'hoàn thành') {
+        throw new AppError('Không thể thanh toán cho booking này', 400, 'INVALID_STATUS');
+    }
+    if (booking.depositPaidAt) {
+        throw new AppError('Tiền cọc đã được thanh toán trước đó', 400, 'DEPOSIT_ALREADY_PAID');
+    }
+
+    const updatedBooking = await Booking.findByIdAndUpdate(
+        bookingId,
+        {
+            depositPaidAt: new Date(),
+            updatedBy: req.user?.id
+        },
+        { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+        success: true,
+        message: 'Thanh toán cọc thành công',
+        data: updatedBooking
+    });
+});
+
+// PATCH /bookings/:bookingId/pay-remaining - Thanh toán số tiền còn lại
+const payRemaining = asyncHandler(async (req, res) => {
+    const { bookingId } = req.params;
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+        throw new AppError('Không tìm thấy booking', 404, 'BOOKING_NOT_FOUND');
+    }
+
+    ensureBookingAccess(booking, req.user);
+    const bookingStatus = normalizeStatus(booking.status);
+
+    if (!booking.depositPaidAt) {
+        throw new AppError('Vui lòng thanh toán tiền cọc trước', 400, 'DEPOSIT_NOT_PAID');
+    }
+    if (bookingStatus !== 'chờ nhận xe') {
+        throw new AppError('Chỉ được thanh toán phần còn lại sau khi admin xác nhận', 400, 'INVALID_STATUS');
+    }
+    if (booking.remainingPaidAt) {
+        throw new AppError('Số tiền còn lại đã được thanh toán trước đó', 400, 'REMAINING_ALREADY_PAID');
+    }
+
+    const updatedBooking = await Booking.findByIdAndUpdate(
+        bookingId,
+        {
+            remainingPaidAt: new Date(),
+            updatedBy: req.user?.id
+        },
+        { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+        success: true,
+        message: 'Thanh toán số tiền còn lại thành công',
         data: updatedBooking
     });
 });
@@ -584,7 +867,11 @@ module.exports = {
     createBooking,
     updateBooking,
     deleteBooking,
+    confirmBooking,
+    payDeposit,
+    payRemaining,
     pickupBooking,
+    markOverdueBooking,
     completeBooking,
     cancelBooking,
     getBookingStats

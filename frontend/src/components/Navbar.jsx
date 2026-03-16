@@ -33,12 +33,23 @@ export default function Navbar() {
               <FiHome /> Trang chủ
             </Link>
             <Link to="/cars" className="flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-gray-700 transition">
-              <FiTruck /> Quản lý xe
+              <FiTruck /> Danh sách xe
             </Link>
             {user && (
-              <Link to="/bookings" className="flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-gray-700 transition">
-                <FiCalendar /> Đặt xe
-              </Link>
+              isAdmin ? (
+                <Link to="/bookings" className="flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-gray-700 transition">
+                  <FiCalendar /> Quản lý đặt xe
+                </Link>
+              ) : (
+                <>
+                  <Link to="/bookings/create" className="flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-gray-700 transition">
+                    <FiCalendar /> Đặt xe
+                  </Link>
+                  <Link to="/my-bookings" className="flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-gray-700 transition">
+                    <FiCalendar /> Đơn của tôi
+                  </Link>
+                </>
+              )
             )}
 
             <div className="ml-4 flex items-center gap-2">
@@ -73,12 +84,23 @@ export default function Navbar() {
               <FiHome /> Trang chủ
             </Link>
             <Link to="/cars" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-700">
-              <FiTruck /> Quản lý xe
+              <FiTruck /> Danh sách xe
             </Link>
             {user && (
-              <Link to="/bookings" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-700">
-                <FiCalendar /> Đặt xe
-              </Link>
+              isAdmin ? (
+                <Link to="/bookings" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-700">
+                  <FiCalendar /> Quản lý đặt xe
+                </Link>
+              ) : (
+                <>
+                  <Link to="/bookings/create" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-700">
+                    <FiCalendar /> Đặt xe
+                  </Link>
+                  <Link to="/my-bookings" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-700">
+                    <FiCalendar /> Đơn của tôi
+                  </Link>
+                </>
+              )
             )}
             <hr className="border-gray-700" />
             {user ? (

@@ -5,6 +5,9 @@ import toast from 'react-hot-toast';
 import { FiUserPlus, FiUser, FiMail, FiLock, FiPhone, FiEye, FiEyeOff, FiArrowLeft } from 'react-icons/fi';
 
 export default function Register() {
+  const usernameRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_]+$/;
+  const fullNameRegex = /^[A-Za-zÀ-ỹ\s]+$/u;
+
   const [form, setForm] = useState({
     username: '', email: '', fullName: '', phone: '', password: '', confirmPassword: '',
   });
@@ -21,8 +24,8 @@ export default function Register() {
     if (!form.username.trim() || form.username.length < 3 || form.username.length > 30) {
       toast.error('Tên đăng nhập phải từ 3-30 ký tự'); return false;
     }
-    if (!/^[a-zA-Z0-9_]+$/.test(form.username)) {
-      toast.error('Tên đăng nhập chỉ được chứa chữ cái, số và dấu _'); return false;
+    if (!usernameRegex.test(form.username)) {
+      toast.error('Tên đăng nhập phải chứa cả chữ và số, chỉ gồm chữ, số và dấu _'); return false;
     }
     if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
       toast.error('Email không hợp lệ'); return false;
@@ -30,7 +33,13 @@ export default function Register() {
     if (!form.fullName.trim() || form.fullName.length < 2) {
       toast.error('Họ tên phải có ít nhất 2 ký tự'); return false;
     }
-    if (form.phone && !/^[0-9]{10,11}$/.test(form.phone)) {
+    if (!fullNameRegex.test(form.fullName.trim())) {
+      toast.error('Họ và tên chỉ được chứa chữ cái (Tiếng Việt) và dấu cách'); return false;
+    }
+    if (!form.phone.trim()) {
+      toast.error('Số điện thoại là bắt buộc'); return false;
+    }
+    if (!/^[0-9]{10,11}$/.test(form.phone)) {
       toast.error('Số điện thoại phải có 10-11 số'); return false;
     }
     if (!form.password || form.password.length < 6) {
@@ -52,11 +61,11 @@ export default function Register() {
         username: form.username.trim(),
         email: form.email.trim(),
         fullName: form.fullName.trim(),
-        phone: form.phone.trim() || undefined,
+        phone: form.phone.trim(),
         password: form.password,
       });
-      toast.success('Đăng ký thành công!');
-      navigate('/');
+      toast.success('Đăng ký thành công! Vui lòng đăng nhập.');
+      navigate('/login');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Đăng ký thất bại');
     } finally {
@@ -84,7 +93,7 @@ export default function Register() {
                 </label>
                 <input type="text" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   placeholder="Tên đăng nhập" value={form.username} onChange={onChange('username')} />
-                <p className="text-xs text-gray-400 mt-1">3-30 ký tự, chỉ chữ, số và _</p>
+                <p className="text-xs text-gray-400 mt-1">3-30 ký tự, phải có cả chữ và số</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -101,11 +110,12 @@ export default function Register() {
               </label>
               <input type="text" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 placeholder="Nhập họ và tên" value={form.fullName} onChange={onChange('fullName')} />
+              <p className="text-xs text-gray-400 mt-1">Chỉ chữ cái Tiếng Việt và dấu cách</p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                <FiPhone className="inline mr-1" /> Số điện thoại
+                <FiPhone className="inline mr-1" /> Số điện thoại <span className="text-red-500">*</span>
               </label>
               <input type="tel" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 placeholder="VD: 0912345678" value={form.phone} onChange={onChange('phone')} />

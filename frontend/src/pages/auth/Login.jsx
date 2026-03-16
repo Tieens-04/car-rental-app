@@ -39,7 +39,7 @@ export default function Login() {
           <div className="text-center mb-6">
             <FiUser className="text-6xl text-blue-600 mx-auto mb-3" />
             <h3 className="text-2xl font-bold">Đăng nhập</h3>
-            <p className="text-gray-500">Chào mừng bạn trở lại!</p>
+            <p className="text-gray-500">Vui lòng đăng nhập để tiếp tục</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">

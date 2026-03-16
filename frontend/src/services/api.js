@@ -28,8 +28,10 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const requestUrl = originalRequest?.url || '';
+    const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/register') || requestUrl.includes('/auth/refresh');
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
 
       const refreshToken = localStorage.getItem('refreshToken');
@@ -92,7 +94,11 @@ export const bookingAPI = {
   create: (data) => api.post('/v1/bookings', data),
   update: (id, data) => api.put(`/v1/bookings/${id}`, data),
   delete: (id) => api.delete(`/v1/bookings/${id}`),
+  confirm: (id) => api.patch(`/v1/bookings/${id}/confirm`),
+  payDeposit: (id) => api.patch(`/v1/bookings/${id}/pay-deposit`),
+  payRemaining: (id) => api.patch(`/v1/bookings/${id}/pay-remaining`),
   pickup: (id) => api.patch(`/v1/bookings/${id}/pickup`),
+  markOverdue: (id) => api.patch(`/v1/bookings/${id}/mark-overdue`),
   complete: (id) => api.patch(`/v1/bookings/${id}/complete`),
   cancel: (id, reason) => api.patch(`/v1/bookings/${id}/cancel`, { reason }),
   getStats: () => api.get('/v1/bookings/stats'),

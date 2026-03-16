@@ -9,9 +9,13 @@ router.get('/stats', authenticate, isAdminOrManager, bookingController.getBookin
 router.get('/:bookingId', authenticate, bookingController.getBookingById);
 router.post('/', authenticate, bookingController.createBooking);
 router.put('/:bookingId', authenticate, bookingController.updateBooking);
+router.patch('/:bookingId/confirm', authenticate, bookingController.confirmBooking);
+router.patch('/:bookingId/pay-deposit', authenticate, bookingController.payDeposit);
+router.patch('/:bookingId/pay-remaining', authenticate, bookingController.payRemaining);
 router.patch('/:bookingId/pickup', authenticate, bookingController.pickupBooking);
+router.patch('/:bookingId/mark-overdue', authenticate, bookingController.markOverdueBooking);
 router.patch('/:bookingId/complete', authenticate, bookingController.completeBooking);
 router.patch('/:bookingId/cancel', authenticate, bookingController.cancelBooking);
-router.delete('/:bookingId', authenticate, isAdminOrManager, bookingController.deleteBooking);
+router.delete('/:bookingId', authenticate, bookingController.deleteBooking);
 
 module.exports = router;

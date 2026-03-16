@@ -9,7 +9,7 @@ const UserSchema = new mongoose.Schema({
         trim: true,
         minlength: [3, 'Tên đăng nhập phải có ít nhất 3 ký tự'],
         maxlength: [30, 'Tên đăng nhập không được quá 30 ký tự'],
-        match: [/^[a-zA-Z0-9_]+$/, 'Tên đăng nhập chỉ được chứa chữ cái, số và dấu gạch dưới']
+        match: [/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_]+$/, 'Tên đăng nhập phải chứa cả chữ và số, chỉ gồm chữ, số và dấu gạch dưới']
     },
     email: {
         type: String,
@@ -30,7 +30,8 @@ const UserSchema = new mongoose.Schema({
         required: [true, 'Họ tên là bắt buộc'],
         trim: true,
         minlength: [2, 'Họ tên phải có ít nhất 2 ký tự'],
-        maxlength: [100, 'Họ tên không được quá 100 ký tự']
+        maxlength: [100, 'Họ tên không được quá 100 ký tự'],
+        match: [/^[A-Za-zÀ-ỹ\s]+$/u, 'Họ và tên chỉ được chứa chữ cái (Tiếng Việt) và dấu cách']
     },
     phone: {
         type: String,

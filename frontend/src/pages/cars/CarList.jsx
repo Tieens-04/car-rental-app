@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { carAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
-import { FiTruck, FiPlus, FiEdit2, FiTrash2, FiUsers } from 'react-icons/fi';
+import { FiTruck, FiPlus, FiEdit2, FiTrash2, FiUsers, FiEye } from 'react-icons/fi';
 
 const statusMap = {
   available: { label: 'Sẵn sàng', color: 'bg-green-100 text-green-800' },
@@ -18,11 +18,13 @@ export default function CarList() {
   const [loading, setLoading] = useState(true);
   const { isAdmin } = useAuth();
 
+  const formatDate = (d) => new Date(d).toLocaleDateString('vi-VN');
+
   const fetchCars = async () => {
     try {
       const { data } = await carAPI.getAll({ limit: 100 });
       setCars(data.data.cars);
-    } catch (err) {
+    } catch {
       toast.error('Không thể tải danh sách xe');
     } finally {
       setLoading(false);
@@ -74,7 +76,7 @@ export default function CarList() {
                   <th className="px-4 py-3 text-left">Trạng thái</th>
                   <th className="px-4 py-3 text-left">Giá/Ngày</th>
                   <th className="px-4 py-3 text-left">Tính năng</th>
-                  {isAdmin && <th className="px-4 py-3 text-center w-36">Thao tác</th>}
+                  <th className="px-4 py-3 text-center w-44">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -87,7 +89,12 @@ export default function CarList() {
                         <span className="flex items-center gap-1"><FiUsers className="text-gray-400" /> {car.capacity} chỗ</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${st.color}`}>{st.label}</span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${st.color}`}>{st.label}</span>
+                          {car.status === 'rented' && car.rentedUntil && (
+                            <span className="text-xs text-gray-500">Dự kiến trả: {formatDate(car.rentedUntil)}</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 font-semibold text-green-600">{formatCurrency(car.pricePerDay)}</td>
                       <td className="px-4 py-3">
@@ -99,20 +106,26 @@ export default function CarList() {
                           </div>
                         ) : <span className="text-gray-400">-</span>}
                       </td>
-                      {isAdmin && (
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <Link to={`/cars/edit/${encodeURIComponent(car.carNumber)}`}
-                              className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition">
-                              <FiEdit2 size={14} />
-                            </Link>
-                            <button onClick={() => handleDelete(car.carNumber)}
-                              className="bg-red-600 text-white p-2 rounded-lg hover:bg-red-700 transition">
-                              <FiTrash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      )}
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <Link to={`/cars/${encodeURIComponent(car.carNumber)}`}
+                            className="bg-slate-600 text-white p-2 rounded-lg hover:bg-slate-700 transition" title="Xem chi tiết">
+                            <FiEye size={14} />
+                          </Link>
+                          {isAdmin && (
+                            <>
+                              <Link to={`/cars/edit/${encodeURIComponent(car.carNumber)}`}
+                                className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition" title="Chỉnh sửa">
+                                <FiEdit2 size={14} />
+                              </Link>
+                              <button onClick={() => handleDelete(car.carNumber)}
+                                className="bg-red-600 text-white p-2 rounded-lg hover:bg-red-700 transition" title="Xóa xe">
+                                <FiTrash2 size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}

@@ -8,6 +8,7 @@ const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN').format(amount)
 
 export default function BookingEdit() {
   const { bookingId } = useParams();
+  const fullNameRegex = /^[A-Za-zÀ-ỹ\s]+$/u;
   const [cars, setCars] = useState([]);
   const [form, setForm] = useState({ customerName: '', carNumber: '', startDate: '', endDate: '' });
   const [originalAmount, setOriginalAmount] = useState(0);
@@ -35,7 +36,7 @@ export default function BookingEdit() {
       toast.error('Không tìm thấy booking');
       navigate('/bookings');
     }).finally(() => setFetching(false));
-  }, [bookingId]);
+  }, [bookingId, navigate]);
 
   const onChange = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -44,18 +45,21 @@ export default function BookingEdit() {
     if (!car || !form.startDate || !form.endDate) return null;
     const start = new Date(form.startDate);
     const end = new Date(form.endDate);
-    if (end <= start) return null;
-    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    if (end < start) return null;
+    const days = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
     return { pricePerDay: car.pricePerDay, days, total: days * car.pricePerDay };
   }, [form.carNumber, form.startDate, form.endDate, cars]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.customerName.trim() || form.customerName.length < 3) {
-      toast.error('Tên khách hàng phải có ít nhất 3 ký tự'); return;
+      toast.error('Tên người đặt phải có ít nhất 3 ký tự'); return;
     }
-    if (new Date(form.endDate) <= new Date(form.startDate)) {
-      toast.error('Ngày kết thúc phải sau ngày bắt đầu'); return;
+    if (!fullNameRegex.test(form.customerName.trim())) {
+      toast.error('Tên người đặt chỉ được chứa chữ cái (Tiếng Việt) và dấu cách'); return;
+    }
+    if (new Date(form.endDate) < new Date(form.startDate)) {
+      toast.error('Ngày kết thúc không được trước ngày bắt đầu'); return;
     }
 
     setLoading(true);
@@ -104,10 +108,11 @@ export default function BookingEdit() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tên khách hàng <span className="text-red-500">*</span>
+                Tên người đặt <span className="text-red-500">*</span>
               </label>
               <input type="text" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 value={form.customerName} onChange={onChange('customerName')} />
+              <p className="text-xs text-gray-400 mt-1">Chỉ chữ cái Tiếng Việt và dấu cách</p>
             </div>
 
             <div>

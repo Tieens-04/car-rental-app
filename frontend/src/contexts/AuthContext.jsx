@@ -12,11 +12,23 @@ export function AuthProvider({ children }) {
       return null;
     }
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    const token = localStorage.getItem('accessToken');
+    return Boolean(token && !user);
+  });
+
+  const clearAuth = () => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+    setUser(null);
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
-    if (token && !user) {
+    const shouldFetchProfile = Boolean(token && !user);
+
+    if (shouldFetchProfile) {
       authAPI.getMe()
         .then(({ data }) => {
           setUser(data.data);
@@ -26,10 +38,8 @@ export function AuthProvider({ children }) {
           clearAuth();
         })
         .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   const login = async (credentials) => {
     const { data } = await authAPI.login(credentials);
@@ -42,10 +52,6 @@ export function AuthProvider({ children }) {
 
   const register = async (formData) => {
     const { data } = await authAPI.register(formData);
-    localStorage.setItem('accessToken', data.data.accessToken);
-    localStorage.setItem('refreshToken', data.data.refreshToken);
-    localStorage.setItem('user', JSON.stringify(data.data.user));
-    setUser(data.data.user);
     return data;
   };
 
@@ -56,14 +62,7 @@ export function AuthProvider({ children }) {
     clearAuth();
   };
 
-  const clearAuth = () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
-    setUser(null);
-  };
-
-  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+  const isAdmin = user?.role === 'admin';
 
   return (
     <AuthContext.Provider value={{ user, loading, login, register, logout, isAdmin }}>
@@ -72,6 +71,7 @@ export function AuthProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error('useAuth must be used within AuthProvider');

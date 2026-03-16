@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "seed": "node scripts/seedData.js"
+    "seed": "node scripts/seedData.js",
+    "migrate:booking-flow": "node scripts/migrateBookingFlow.js"
   },
   "keywords": [
     "car",

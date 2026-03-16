@@ -9,9 +9,12 @@ import Register from './pages/auth/Register';
 import CarList from './pages/cars/CarList';
 import CarCreate from './pages/cars/CarCreate';
 import CarEdit from './pages/cars/CarEdit';
+import CarDetail from './pages/cars/CarDetail';
 import BookingList from './pages/bookings/BookingList';
 import BookingCreate from './pages/bookings/BookingCreate';
 import BookingEdit from './pages/bookings/BookingEdit';
+import BookingDetailAdmin from './pages/bookings/BookingDetailAdmin';
+import BookingDetailUser from './pages/bookings/BookingDetailUser';
 
 export default function App() {
   return (
@@ -37,11 +40,17 @@ export default function App() {
                   <CarEdit />
                 </ProtectedRoute>
               } />
+              <Route path="/cars/:carNumber" element={<CarDetail />} />
 
               {/* Bookings */}
               <Route path="/bookings" element={
-                <ProtectedRoute>
+                <ProtectedRoute adminOnly>
                   <BookingList />
+                </ProtectedRoute>
+              } />
+              <Route path="/my-bookings" element={
+                <ProtectedRoute>
+                  <BookingList userOnly />
                 </ProtectedRoute>
               } />
               <Route path="/bookings/create" element={
@@ -49,8 +58,18 @@ export default function App() {
                   <BookingCreate />
                 </ProtectedRoute>
               } />
-              <Route path="/bookings/edit/:bookingId" element={
+              <Route path="/bookings/:bookingId" element={
+                <ProtectedRoute adminOnly>
+                  <BookingDetailAdmin />
+                </ProtectedRoute>
+              } />
+              <Route path="/my-bookings/:bookingId" element={
                 <ProtectedRoute>
+                  <BookingDetailUser />
+                </ProtectedRoute>
+              } />
+              <Route path="/bookings/edit/:bookingId" element={
+                <ProtectedRoute adminOnly>
                   <BookingEdit />
                 </ProtectedRoute>
               } />
@@ -63,6 +82,7 @@ export default function App() {
         </div>
         <Toaster
           position="top-right"
+          containerStyle={{ top: 78 }}
           toastOptions={{
             duration: 4000,
             style: { borderRadius: '10px', background: '#333', color: '#fff' },

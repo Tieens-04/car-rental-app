@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { FiTruck, FiCalendar, FiShield, FiClock, FiHeadphones, FiArrowRight } from 'react-icons/fi';
 
 export default function Home() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   return (
     <div>
@@ -28,10 +28,14 @@ export default function Home() {
         </div>
         <div className="bg-white rounded-xl shadow-md p-8 hover:shadow-lg transition text-center">
           <FiCalendar className="text-5xl text-blue-600 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold mb-2">Quản lý đặt xe</h3>
-          <p className="text-gray-500 mb-4">Tạo và quản lý đặt xe của khách hàng. Tự động tính toán chi phí thuê xe.</p>
-          <Link to="/bookings" className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
-            <FiArrowRight /> Xem danh sách đặt xe
+          <h3 className="text-xl font-semibold mb-2">{isAdmin ? 'Quản lý đặt xe' : 'Đặt xe'}</h3>
+          <p className="text-gray-500 mb-4">
+            {isAdmin
+              ? 'Duyệt đơn, quản lý trạng thái nhận/trả xe và theo dõi thanh toán.'
+              : 'Tạo đơn thuê xe, theo dõi xác nhận và thanh toán theo từng giai đoạn.'}
+          </p>
+          <Link to={isAdmin ? '/bookings' : (user ? '/my-bookings' : '/login')} className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+            <FiArrowRight /> {isAdmin ? 'Xem quản lý đặt xe' : 'Xem đơn đặt xe của tôi'}
           </Link>
         </div>
       </div>
